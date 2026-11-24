@@ -1,0 +1,61 @@
+# EPDK şarj istasyonu listesini günde bir kez çekip gh-pages dalına yazar.
+# GitHub Pages bu dalı herkese açık sunar; uygulama yalnız buradan okur.
+name: Günlük EPDK verisi
+on:
+  schedule:
+    - cron: "41 2 * * *"   # 05:41 Türkiye saati, saat başı yığılmasından uzak
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "20 saat korumasını atla"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: ["epdk_snapshot.py", "tests/**"]
+  pull_request:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: epdk
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m unittest discover -s tests -v
+
+  veri:
+    needs: test
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: gh-pages dalını aç
+        run: |
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
+            git fetch --depth 1 origin gh-pages
+            git worktree add public FETCH_HEAD
+          else
+            git worktree add --detach public
+            (cd public && git checkout --orphan gh-pages && git rm -rfq . && touch .nojekyll)
+          fi
+      - name: EPDK'dan çek ve dönüştür
+        run: python epdk_snapshot.py --out public ${{ inputs.force && '--force' || '' }}
+      - name: Yayınla
+        working-directory: public
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "Değişiklik yok"; exit 0; fi
+          git commit -qm "EPDK verisi $(date -u +%F)"
+          git push origin HEAD:gh-pages
