@@ -13,6 +13,7 @@ on:
   push:
     branches: [main]
     paths: ["epdk_snapshot.py", "tests/**"]
+  pull_request:
 
 permissions:
   contents: write
@@ -32,7 +33,7 @@ jobs:
 
   veri:
     needs: test
-    if: github.event_name != 'push'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
